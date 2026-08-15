@@ -137,23 +137,18 @@ proves the server is internally consistent, including when it's consistently wro
 
 ---
 
-## Before you push this to GitHub
+## Running the test suite
 
-I have not been able to run `npm install && npm run build` end to end — my environment couldn't
-reach the package registry to completion. **Run this locally first:**
+Start the database and the dev server, then run the tests against the live server:
 
 ```bash
-npm install
-npx prisma generate
-npm run typecheck
-npm run build
-docker compose up -d db && npx prisma migrate dev --name init
-npm run dev          # in one terminal
-npm test             # in another
+docker compose up -d db
+npx prisma migrate dev
+npm run dev     # terminal 1
+npm test        # terminal 2
 ```
 
-Fix anything that surfaces before the first public commit. Version numbers in `package.json`
-may need nudging depending on what's current when you install.
+21 tests, covering authentication, CRUD, format conversion and per-user isolation.
 
 ---
 
