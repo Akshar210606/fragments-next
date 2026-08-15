@@ -1,0 +1,49 @@
+// Fragments v2 — PostgreSQL schema
+//
+// The v1 split (metadata in DynamoDB, blobs in S3) becomes one Postgres table.
+// That is a real tradeoff and you should be able to argue both sides:
+//
+//   For one table:  transactional consistency between metadata and content.
+//                   In v1, a write could succeed in DynamoDB and fail in S3,
+//                   leaving metadata pointing at a blob that does not exist —
+//                   exactly the "reports success while being wrong" failure
+//                   you write about in your outreach.
+//
+//   Against:        Postgres is not object storage. Large blobs in a row hurt
+//                   table scans and backups. The honest answer for real scale
+//                   is metadata in Postgres and blobs in S3, with the write
+//                   ordered so a failure leaves an orphaned blob (harmless)
+//                   rather than orphaned metadata (broken).
+//
+// Build the simple version. Know why you would change it. That answer is worth
+// more in an interview than the more "impressive" architecture.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Fragment {
+  id        String   @id @default(uuid())
+  ownerId   String
+  type      String // full media type, e.g. "text/markdown", "image/png"
+  size      Int
+  data      Bytes // the ORIGINAL bytes, always. Conversions are computed on read.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Composite index, not two single-column ones. Every read is scoped
+  // "this owner, this fragment" — so the index should match that access
+  // pattern. Be ready to explain why (ownerId, id) and not (id, ownerId).
+  @@index([ownerId, id])
+  @@map("fragments")
+}
+
+// No User model on purpose. Identity lives in the JWT subject claim, so this
+// service stores no credentials and never becomes a thing to breach. If real
+// signup is added later, only src/lib/auth.ts changes — which is the point of
+// keeping verification behind a single wrapper.

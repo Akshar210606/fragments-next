@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fragments
+      POSTGRES_PASSWORD: fragments
+      POSTGRES_DB: fragments
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Same principle as v1's MinIO/DynamoDB-Local setup: anyone who clones
+      # this repo gets a working stack with one command and no cloud account.
+      test: ['CMD-SHELL', 'pg_isready -U fragments']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fragments:fragments@db:5432/fragments
+      JWT_SECRET: dev-only-not-a-real-secret
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
