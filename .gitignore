@@ -6,3 +6,9 @@ coverage/
 
 # TypeScript incremental build cache - machine-specific, regenerated on build
 *.tsbuildinfo
+
+# Playwright - reports and traces are run artefacts, not source
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
