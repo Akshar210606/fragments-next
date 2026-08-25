@@ -49,16 +49,23 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # One step, one server. The integration suite and the end-to-end suite
-      # both run against the same started process, so there is no second
-      # server racing for port 3000 and no reliance on a background process
-      # surviving between steps.
-      - name: Start server, run integration and end-to-end tests
+      # The integration suite runs against the production build, which is the
+      # artefact that would actually ship. Port 3000 is freed afterwards so the
+      # browser suite can start its own server without racing this one.
+      - name: Start production server and run integration tests
         run: |
           npm start &
           npx wait-on http://localhost:3000/api/health -t 30000
           npm test
-          npm run test:e2e
+          npx --yes kill-port 3000
+
+      # The browser suite runs against a dev server instead. Sign-in goes
+      # through /api/auth/dev-token, which is disabled in production by design,
+      # so pointing Playwright at `npm start` fails every authenticated test
+      # with a 404 unrelated to the code under test. Playwright starts the dev
+      # server itself via the webServer block in playwright.config.ts.
+      - name: Run end-to-end browser tests
+        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
