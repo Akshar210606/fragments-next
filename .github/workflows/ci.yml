@@ -41,7 +41,6 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run build
 
       # Only Chromium. Three engines would triple the install time to re-prove
       # the same application logic; cross-browser rendering is not what these
@@ -49,28 +48,35 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # The integration suite runs against the production build, which is the
-      # artefact that would actually ship. Port 3000 is freed afterwards so the
-      # browser suite can start its own server without racing this one.
+      # ---------------------------------------------------------------------
+      # Order matters here, and not for the obvious reason.
+      #
+      # The browser suite runs against a DEVELOPMENT server: sign-in goes
+      # through /api/auth/dev-token, which returns 404 in production by design,
+      # so a production server fails every authenticated test with a 404 that
+      # has nothing to do with the code under test.
+      #
+      # Running it BEFORE the production server exists means there is never a
+      # process to hunt down and kill. The earlier version of this file started
+      # the production server first and then tried to free the port, which is a
+      # step that can quietly fail and leave the wrong server answering. This
+      # ordering removes that failure entirely rather than defending against it.
+      #
+      # Playwright starts and stops its own dev server via the webServer block
+      # in playwright.config.ts, so port 3000 is free again afterwards.
+      # ---------------------------------------------------------------------
+      - name: Run end-to-end browser tests
+        run: npm run test:e2e
+
+      # Built after the dev run so the production artefact is clean, and it is
+      # this artefact the integration suite then exercises.
+      - run: npm run build
+
       - name: Start production server and run integration tests
         run: |
           npm start &
           npx wait-on http://localhost:3000/api/health -t 30000
           npm test
-          # Free port 3000 for the browser suite. `npm start &` keeps running
-          # until it is stopped explicitly, and kill-port did not find it -
-          # it reports on the npm wrapper, not the next-server process that
-          # actually holds the socket. lsof asks the socket directly.
-          lsof -ti:3000 | xargs -r kill -9 || true
-          sleep 3
-
-      # The browser suite runs against a dev server instead. Sign-in goes
-      # through /api/auth/dev-token, which is disabled in production by design,
-      # so pointing Playwright at `npm start` fails every authenticated test
-      # with a 404 unrelated to the code under test. Playwright starts the dev
-      # server itself via the webServer block in playwright.config.ts.
-      - name: Run end-to-end browser tests
-        run: npm run test:e2e
 
       - name: Upload Playwright report on failure
         if: failure()
