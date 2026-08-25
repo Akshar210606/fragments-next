@@ -57,7 +57,12 @@ jobs:
           npm start &
           npx wait-on http://localhost:3000/api/health -t 30000
           npm test
-          npx --yes kill-port 3000
+          # Free port 3000 for the browser suite. `npm start &` keeps running
+          # until it is stopped explicitly, and kill-port did not find it -
+          # it reports on the npm wrapper, not the next-server process that
+          # actually holds the socket. lsof asks the socket directly.
+          lsof -ti:3000 | xargs -r kill -9 || true
+          sleep 3
 
       # The browser suite runs against a dev server instead. Sign-in goes
       # through /api/auth/dev-token, which is disabled in production by design,

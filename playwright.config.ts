@@ -60,14 +60,19 @@ export default defineConfig({
    * honest target for these tests, and the vitest suite already exercises the
    * API against the production build.
    *
-   * reuseExistingServer is true so `npm run dev` in one terminal and
-   * `npm run test:e2e` in another just works, and so CI can start the server
-   * itself without racing a second process onto port 3000.
+   * reuseExistingServer is on locally so `npm run dev` in one terminal and
+   * `npm run test:e2e` in another just works.
+   *
+   * It is off in CI deliberately. Reuse attaches to whatever answers on the
+   * port, and if the production server from the previous step has not stopped
+   * yet, that is exactly the server these tests cannot use - which surfaces as
+   * a 404 on sign-in rather than as "the wrong server is running". With reuse
+   * off, a lingering process fails loudly at startup instead.
    */
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:3000/api/health',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
 });
