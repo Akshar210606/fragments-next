@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@prisma/client": "6.2.1",
@@ -25,6 +27,7 @@
     "sharp": "^0.33.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.10.7",
