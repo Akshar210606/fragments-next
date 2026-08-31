@@ -16,10 +16,18 @@ let pngBytes: Buffer;
 beforeAll(async () => {
   alice = token('alice');
   bob = token('bob');
+  // compressionLevel: 0 is load-bearing, not decoration.
+  //
+  // Built with sharp's defaults this image is 95 bytes, and re-encoding it
+  // through sharp at those same defaults reproduces all 95 byte for byte. The
+  // identity-conversion test below would then pass whether or not convert()
+  // short-circuits - verified by deleting the short-circuit and watching it
+  // stay green. Stored uncompressed the fixture is 289 bytes, which a default
+  // round trip collapses to 95, so the comparison has something to catch.
   pngBytes = await sharp({
     create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 40, b: 40 } },
   })
-    .png()
+    .png({ compressionLevel: 0 })
     .toBuffer();
 });
 
