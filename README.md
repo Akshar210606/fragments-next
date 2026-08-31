@@ -29,7 +29,7 @@ Run the tests:
 
 ```bash
 npm test          # 21 API integration tests (needs the dev server running)
-npm run test:e2e  # 10 browser tests (starts its own dev server)
+npm run test:e2e  # 11 browser tests (starts its own dev server)
 ```
 
 ---
@@ -132,12 +132,19 @@ Two suites that fail for different reasons.
 `tests/fragments.test.ts` — **21 API integration tests** covering authentication, CRUD,
 conversion and per-user isolation, called directly against the running server.
 
-`e2e/fragments.spec.ts` — **10 Playwright browser tests** driving the real UI in Chromium.
+`e2e/fragments.spec.ts` — **11 Playwright browser tests** driving the real UI in Chromium.
 The API suite proves the endpoints behave. This one proves those guarantees survive the trip
 through a browser, which is a different failure: an endpoint can be correct while the page
 renders someone else's data, or renders nothing at all.
 
-### Three worth reading
+Nothing the API suite already covers is repeated here. A second copy of "an unauthenticated
+request gets `401`" costs a browser launch and proves nothing new, so the browser suite only
+contains tests that go through the UI or that cross two genuinely separate browser sessions.
+
+Every spec mints its own username and deletes its own rows in an `afterEach`, so the suite passes
+in any order, runs `fullyParallel`, and leaves the database exactly as it found it.
+
+### Four worth reading
 
 **Cross-user isolation, at the API layer.** Alice creates a fragment, Bob requests it, Bob must
 get `404`. There are three of these — read, overwrite, delete — because each verb needs its own
@@ -147,6 +154,21 @@ proof.
 offset 8. A `Content-Type` header is a claim the server makes about itself; asserting on it only
 proves the server is internally consistent, including when it is consistently wrong.
 
+**Identity conversion, and the fixture that made the test a no-op.** Requesting a stored PNG as
+`.png` must return the stored bytes rather than round-tripping through sharp, which re-encodes and
+silently degrades. The browser test writes the response to a file and compares it against the
+original byte for byte.
+
+That test was worthless for a subtler reason than the isolation one below. The fixture was built
+with `sharp().png()` at default settings, and re-encoding it through sharp *at those same defaults*
+reproduces all 95 bytes exactly — so the comparison passed whether or not the short-circuit
+existed. Found by deleting the short-circuit and watching the test stay green. The fixture is now
+written with `compressionLevel: 0`, which stores 289 bytes that a default round trip collapses to
+95, and the assertion has something to catch.
+
+**The same hole is still open in `tests/fragments.test.ts`.** Its identity-conversion test uses a
+default-settings fixture and cannot fail either. Fixing it is a one-line change to the fixture.
+
 **Cross-user isolation, in the browser — and the version of it that was worthless.** The obvious
 way to write this test is to sign in as Bob and assert the page reads `Nothing yet.` That test
 passes against a build with the ownership constraint deliberately removed, which is how I found
@@ -155,11 +177,47 @@ Playwright's auto-retrying assertion matches that first frame and returns green 
 the fetch later fills the list with Alice's data.
 
 The test now has Bob create his own fragment first, then asserts he has exactly one list item and
-that Alice's ID prefix appears zero times on his page. Both assertions fail if isolation breaks.
+that Alice's fragment id appears zero times on his page. Both assertions fail if isolation breaks.
+
+**Two isolated sessions, going after each other's data by URL.** This is the spec the suite exists
+for, and it is described in full in the next section.
 
 The general lesson, and the reason this is in the README: a test suite nobody has watched fail is
-a suite nobody should trust. Every isolation test here was verified by removing the constraint it
-guards and confirming it went red.
+a suite nobody should trust. Every guard-testing spec here was verified by removing the constraint
+it guards and confirming it went red — the ownership filter on the list query, the ownership filter
+on `GET /api/fragments/[id]`, the owner in `deleteMany`, and the identity short-circuit in
+`convert()`. Two of the four only started failing after the test itself was fixed.
+
+---
+
+## What the isolation spec proves
+
+`a second browser session cannot read another user's fragment by URL` is the one to read.
+
+Alice signs in through the form in one `browser.newContext()` and creates a fragment. Bob signs in
+through the form in a second, entirely separate context — its own cookies, its own storage, a
+genuinely different visitor rather than the same session renamed. Bob then goes after Alice's
+fragment by its URL.
+
+The spec asserts three things, and it needs all three:
+
+1. **A drive-by navigation is refused outright — `401`, and none of Alice's content on the page.**
+   Identity here is a bearer token held in React state; there is no cookie and no session. So
+   pointing a browser at `/api/fragments/<id>` sends no credentials at all. This leg documents
+   that, and it is also why the obvious version of this test is a trap: asserting `404` on a raw
+   navigation asserts on a request that was never *Bob's*, and would pass just as happily against
+   a build with no ownership filter whatsoever.
+
+2. **Bob's own credentials get `404` — never `403`.** `403` would confirm the id exists, which is
+   all an enumerator needs. Asserted explicitly, so that "fixing" it to `403` later fails loudly.
+
+3. **Alice still gets `200` and her exact bytes.** Without this leg, leg 2 proves nothing: deleting
+   the fragment outright would also produce a `404`. This is what makes the denial in leg 2 a real
+   denial rather than the trivial `404` any unknown id returns.
+
+The companion spec does the same across the delete verb: Bob's `DELETE` against Alice's fragment
+returns `404` and the row survives, then Alice's own delete removes it from her list and the id
+`404`s afterwards. Both fail if the owner is dropped from the `where` clause.
 
 ---
 
@@ -176,7 +234,7 @@ npm test             # terminal 2 - 21 API tests against the running server
 Playwright manages its own server, so it needs nothing running first:
 
 ```bash
-npm run test:e2e     # 10 browser tests
+npm run test:e2e     # 11 browser tests
 npm run test:e2e:ui  # same, in Playwright's UI mode
 ```
 
@@ -195,17 +253,29 @@ and 2 while everything after them passes in seconds.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, against a real
-PostgreSQL 16 service container. Nothing merges unless all of it passes:
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, as **two parallel
+jobs**, each with its own PostgreSQL 16 service container. Nothing merges unless both pass.
 
-`npm ci` → `prisma migrate deploy` → `lint` → `typecheck` → **browser suite** → `build` →
-**API suite against the production server**
+| Job | Runs |
+|---|---|
+| `verify` | `npm ci` → `prisma migrate deploy` → `lint` → `typecheck` → `build` → API suite against the production server |
+| `e2e` | `npm ci` → `prisma migrate deploy` → `playwright install chromium` → browser suite against `next dev` |
 
-The browser suite runs *before* the production server exists, and the ordering is the fix rather
-than a preference. An earlier version started the production server first and then tried to free
-port 3000 so Playwright could start its own — a step that can quietly fail and leave the wrong
-server answering, which surfaces as a `404` on sign-in rather than as "the wrong server is
-running." Running the dev-server suite first means there is never a process to hunt down.
+They used to be one job, and the browser suite had to run *before* the production build, because
+it needs the dev server — sign-in goes through `/api/auth/dev-token`, which `404`s in production by
+design — and a shared runner meant a shared port 3000. That ordering worked, but it was a
+constraint the pipeline was carrying on behalf of a problem it did not need to have.
+
+Separate runners give each suite its own database and its own port 3000, so neither can be broken
+by the other's server, and they fail independently: "the browser suite went red" and "the API suite
+went red" are different problems and are now different red X's.
+
+On failure the `e2e` job uploads **both** `playwright-report/` and `test-results/`. The report is
+the readable summary; `test-results/` is where the traces actually live. The previous version
+uploaded only the report, so the traces the config was diligently recording never left the runner —
+a trace you cannot download is a trace you do not have. `trace` is set to `retain-on-failure`
+rather than `on-first-retry` for the same reason: with `retries: 1` in CI, a trace you can only get
+by failing twice is no use when the second attempt passes.
 
 ## Project layout
 
@@ -226,7 +296,7 @@ src/
 prisma/schema.prisma
 tests/fragments.test.ts          21 API integration tests (vitest)
 e2e/
-  fragments.spec.ts              10 browser tests (Playwright)
+  fragments.spec.ts              11 browser tests (Playwright)
   global-setup.ts                warms every route before the suite starts
 playwright.config.ts
 .github/workflows/ci.yml

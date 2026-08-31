@@ -28,6 +28,11 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
 
+  // Every spec mints its own username and deletes its own rows, so nothing is
+  // shared between them and they can run at the same time. Turning this on is
+  // also the only way an accidental ordering dependency ever gets caught.
+  fullyParallel: true,
+
   // A failing e2e test should fail the build, not be quietly retried into
   // passing. Retries only in CI, and only to absorb genuine flake.
   retries: process.env.CI ? 1 : 0,
@@ -37,7 +42,11 @@ export default defineConfig({
   use: {
     baseURL: process.env.TEST_BASE_URL ?? 'http://localhost:3000',
     // Artefacts only for failures, so a green run leaves nothing behind.
-    trace: 'on-first-retry',
+    //
+    // retain-on-failure rather than on-first-retry: a trace you can only get by
+    // failing twice is not much use when CI runs with retries: 1 and the second
+    // attempt passes. This way the first failure is the one recorded.
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'off',
   },

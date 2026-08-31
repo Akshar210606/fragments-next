@@ -8,8 +8,25 @@ on:
     branches: [main]
   pull_request:
 
+# Two jobs, on two runners, in parallel.
+#
+# They used to be one. The browser suite ran as a step inside `verify`, ahead of
+# the production build, because it needs the DEV server — sign-in goes through
+# /api/auth/dev-token, which 404s in production by design — and sharing a runner
+# meant sharing port 3000 with the production server that the integration tests
+# need. The ordering worked, but it was a constraint the pipeline was carrying
+# on behalf of a problem it did not have to have.
+#
+# Separate jobs give each suite its own runner, its own database and its own
+# port 3000, so neither can be broken by the other's server. They also fail
+# independently: "the browser suite went red" and "the API suite went red" are
+# different problems, and now they are different red X's.
 jobs:
+  # ---------------------------------------------------------------------------
+  # Lint, types, and the API integration suite against a PRODUCTION build.
+  # ---------------------------------------------------------------------------
   verify:
+    name: Lint, types, API tests
     runs-on: ubuntu-latest
 
     services:
@@ -41,35 +58,6 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run typecheck
-
-      # Only Chromium. Three engines would triple the install time to re-prove
-      # the same application logic; cross-browser rendering is not what these
-      # tests are about.
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-
-      # ---------------------------------------------------------------------
-      # Order matters here, and not for the obvious reason.
-      #
-      # The browser suite runs against a DEVELOPMENT server: sign-in goes
-      # through /api/auth/dev-token, which returns 404 in production by design,
-      # so a production server fails every authenticated test with a 404 that
-      # has nothing to do with the code under test.
-      #
-      # Running it BEFORE the production server exists means there is never a
-      # process to hunt down and kill. The earlier version of this file started
-      # the production server first and then tried to free the port, which is a
-      # step that can quietly fail and leave the wrong server answering. This
-      # ordering removes that failure entirely rather than defending against it.
-      #
-      # Playwright starts and stops its own dev server via the webServer block
-      # in playwright.config.ts, so port 3000 is free again afterwards.
-      # ---------------------------------------------------------------------
-      - name: Run end-to-end browser tests
-        run: npm run test:e2e
-
-      # Built after the dev run so the production artefact is clean, and it is
-      # this artefact the integration suite then exercises.
       - run: npm run build
 
       - name: Start production server and run integration tests
@@ -78,10 +66,67 @@ jobs:
           npx wait-on http://localhost:3000/api/health -t 30000
           npm test
 
-      - name: Upload Playwright report on failure
+  # ---------------------------------------------------------------------------
+  # The browser suite, against a DEV server.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fragments
+          POSTGRES_PASSWORD: fragments
+          POSTGRES_DB: fragments_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://fragments:fragments@localhost:5432/fragments_test
+      JWT_SECRET: ci-secret
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma migrate deploy
+
+      # Only Chromium. Three engines would triple the install time to re-prove
+      # the same application logic; cross-browser rendering is not what these
+      # tests are about.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Playwright starts and stops its own dev server via the webServer block
+      # in playwright.config.ts. reuseExistingServer is off in CI on purpose:
+      # reuse attaches to whatever answers on the port, so a stray process would
+      # be silently tested instead of failing loudly at startup.
+      - name: Run end-to-end browser tests
+        run: npm run test:e2e
+
+      # Both artefacts, and both only on failure.
+      #
+      # playwright-report/ is the readable summary. test-results/ is where the
+      # traces actually live — the previous version of this file uploaded only
+      # the report, so the traces the config was diligently recording never left
+      # the runner. A trace you cannot download is a trace you do not have.
+      - name: Upload Playwright report and traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
+          if-no-files-found: ignore
