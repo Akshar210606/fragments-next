@@ -98,7 +98,10 @@ export default function Home() {
       </p>
 
       {!token ? (
-        <section className="mt-8 rounded-lg border border-neutral-200 p-5">
+        <section
+          data-testid="signin-panel"
+          className="mt-8 rounded-lg border border-neutral-200 p-5"
+        >
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
             Sign in
           </h2>
@@ -108,12 +111,14 @@ export default function Home() {
           </p>
           <div className="mt-3 flex gap-2">
             <input
+              data-testid="username-input"
               className="flex-1 rounded border border-neutral-300 px-3 py-2 text-sm"
               value={user}
               onChange={(e) => setUser(e.target.value)}
               placeholder="username"
             />
             <button
+              data-testid="signin-button"
               onClick={login}
               className="rounded bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700"
             >
@@ -124,8 +129,15 @@ export default function Home() {
       ) : (
         <>
           <p className="mt-6 text-sm text-neutral-600">
-            Signed in as <span className="font-semibold">{user}</span>{' '}
-            <button onClick={() => setToken(null)} className="ml-2 underline">
+            Signed in as{' '}
+            <span data-testid="current-user" className="font-semibold">
+              {user}
+            </span>{' '}
+            <button
+              data-testid="signout-button"
+              onClick={() => setToken(null)}
+              className="ml-2 underline"
+            >
               sign out
             </button>
           </p>
@@ -135,6 +147,7 @@ export default function Home() {
               New fragment
             </h2>
             <select
+              data-testid="type-select"
               className="mt-3 rounded border border-neutral-300 px-2 py-1.5 text-sm"
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -146,11 +159,13 @@ export default function Home() {
               ))}
             </select>
             <textarea
+              data-testid="body-input"
               className="mt-3 h-32 w-full rounded border border-neutral-300 p-3 font-mono text-sm"
               value={body}
               onChange={(e) => setBody(e.target.value)}
             />
             <button
+              data-testid="create-button"
               disabled={busy}
               onClick={createFragment}
               className="mt-2 rounded bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700 disabled:opacity-50"
@@ -160,41 +175,73 @@ export default function Home() {
           </section>
 
           {error && (
-            <p className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <p
+              data-testid="error"
+              className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
               {error}
             </p>
           )}
 
           <section className="mt-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            <h2
+              data-testid="fragment-count"
+              className="text-sm font-semibold uppercase tracking-wide text-neutral-500"
+            >
               Your fragments ({fragments.length})
             </h2>
-            <ul className="mt-3 space-y-2">
+            <ul data-testid="fragment-list" className="mt-3 space-y-2">
               {fragments.map((f) => (
                 <li
                   key={f.id}
+                  // The full id as an attribute, not as visible text. It is what
+                  // lets a test address one specific row's buttons instead of
+                  // matching every "delete" on the page, which is a strict-mode
+                  // violation the moment a user owns two fragments.
+                  data-testid="fragment-row"
+                  data-fragment-id={f.id}
                   className="flex flex-wrap items-center gap-3 rounded border border-neutral-200 p-3 text-sm"
                 >
-                  <code className="text-xs text-neutral-500">{f.id.slice(0, 8)}</code>
-                  <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs">{f.type}</span>
-                  <span className="text-xs text-neutral-500">{f.size} bytes</span>
+                  <code data-testid="fragment-id" className="text-xs text-neutral-500">
+                    {f.id.slice(0, 8)}
+                  </code>
+                  <span data-testid="fragment-type" className="rounded bg-neutral-100 px-2 py-0.5 text-xs">
+                    {f.type}
+                  </span>
+                  <span data-testid="fragment-size" className="text-xs text-neutral-500">
+                    {f.size} bytes
+                  </span>
                   <span className="ml-auto flex gap-2">
-                    <button onClick={() => view(f.id)} className="underline">
+                    <button
+                      data-testid="view-raw"
+                      onClick={() => view(f.id)}
+                      className="underline"
+                    >
                       raw
                     </button>
                     {f.type === 'text/markdown' && (
-                      <button onClick={() => view(f.id, 'html')} className="underline">
+                      <button
+                        data-testid="view-html"
+                        onClick={() => view(f.id, 'html')}
+                        className="underline"
+                      >
                         as html
                       </button>
                     )}
-                    <button onClick={() => remove(f.id)} className="text-red-600 underline">
+                    <button
+                      data-testid="delete-fragment"
+                      onClick={() => remove(f.id)}
+                      className="text-red-600 underline"
+                    >
                       delete
                     </button>
                   </span>
                 </li>
               ))}
               {fragments.length === 0 && (
-                <li className="text-sm text-neutral-500">Nothing yet.</li>
+                <li data-testid="empty-state" className="text-sm text-neutral-500">
+                  Nothing yet.
+                </li>
               )}
             </ul>
           </section>
@@ -204,7 +251,10 @@ export default function Home() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
                 Preview
               </h2>
-              <pre className="mt-2 overflow-auto rounded border border-neutral-200 bg-neutral-50 p-4 text-xs">
+              <pre
+                data-testid="preview"
+                className="mt-2 overflow-auto rounded border border-neutral-200 bg-neutral-50 p-4 text-xs"
+              >
                 {preview}
               </pre>
             </section>
