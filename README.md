@@ -166,8 +166,9 @@ existed. Found by deleting the short-circuit and watching the test stay green. T
 written with `compressionLevel: 0`, which stores 289 bytes that a default round trip collapses to
 95, and the assertion has something to catch.
 
-**The same hole is still open in `tests/fragments.test.ts`.** Its identity-conversion test uses a
-default-settings fixture and cannot fail either. Fixing it is a one-line change to the fixture.
+The API suite had the same fixture bug in its own identity-conversion test, found the same way and
+fixed the same way. Both suites now build the fixture with an encoder setting their own encoder
+will not reproduce, so both fail when the short-circuit is removed.
 
 **Cross-user isolation, in the browser — and the version of it that was worthless.** The obvious
 way to write this test is to sign in as Bob and assert the page reads `Nothing yet.` That test
